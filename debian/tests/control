@@ -1,0 +1,3 @@
+Tests: build
+Depends: build-essential, libfluidsynth-dev
+Restrictions: allow-stderr
