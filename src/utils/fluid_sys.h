@@ -129,7 +129,18 @@ typedef gintptr  intptr_t;
 
 #endif
 
-#if defined(WIN32) &&  HAVE_WINDOWS_H
+/*
+ * CYGWIN has its own version of <windows.h>, which can be
+ * safely included together with POSIX includes.
+ * Thanks to this, CYGWIN can also run audio output and MIDI
+ * input drivers from traditional interfaces of Windows.
+ */
+#if defined(__CYGWIN__) && HAVE_WINDOWS_H
+#include <windows.h>
+#include <wchar.h>
+#endif
+
+#if defined(_WIN32) && HAVE_WINDOWS_H
 #include <winsock2.h>
 #include <ws2tcpip.h>	/* Provides also socklen_t */
 
@@ -167,6 +178,9 @@ typedef gintptr  intptr_t;
  */
 #define fluid_gerror_message(err)  ((err) ? err->message : "No error details")
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+char* fluid_get_windows_error(void);
+#endif
 
 #define FLUID_INLINE              inline
 
@@ -197,12 +211,21 @@ typedef gintptr  intptr_t;
  */
 char *fluid_strtok(char **str, char *delim);
 
+#define FLUID_FILE_TEST_EXISTS G_FILE_TEST_EXISTS
+#define FLUID_FILE_TEST_IS_REGULAR G_FILE_TEST_IS_REGULAR
+#define fluid_file_test(path, flags) g_file_test(path, flags)
+
+#define fluid_shell_parse_argv(command_line, argcp, argvp) g_shell_parse_argv(command_line, argcp, argvp, NULL)
+#define fluid_strfreev g_strfreev
 
 #if defined(__OS2__)
 #define INCL_DOS
 #include <os2.h>
 
+/* Define socklen_t if not provided */
+#if !HAVE_SOCKLEN_T
 typedef int socklen_t;
+#endif
 #endif
 
 /**
@@ -406,19 +429,19 @@ typedef GStaticPrivate fluid_private_t;
   g_atomic_pointer_compare_and_exchange(_pp, _old, _new)
 
 static FLUID_INLINE void
-fluid_atomic_float_set(volatile float *fptr, float val)
+fluid_atomic_float_set(fluid_atomic_float_t *fptr, float val)
 {
     int32_t ival;
     memcpy(&ival, &val, 4);
-    fluid_atomic_int_set((volatile int *)fptr, ival);
+    fluid_atomic_int_set((fluid_atomic_int_t *)fptr, ival);
 }
 
 static FLUID_INLINE float
-fluid_atomic_float_get(volatile float *fptr)
+fluid_atomic_float_get(fluid_atomic_float_t *fptr)
 {
     int32_t ival;
     float fval;
-    ival = fluid_atomic_int_get((volatile int *)fptr);
+    ival = fluid_atomic_int_get((fluid_atomic_int_t *)fptr);
     memcpy(&fval, &ival, 4);
     return fval;
 }
@@ -462,7 +485,7 @@ typedef GModule fluid_module_t;
 int fluid_istream_readline(fluid_istream_t in, fluid_ostream_t out, char *prompt, char *buf, int len);
 int fluid_ostream_printf(fluid_ostream_t out, const char *format, ...);
 
-#if defined(WIN32)
+#if defined(_WIN32)
 typedef SOCKET fluid_socket_t;
 #else
 typedef int fluid_socket_t;
@@ -486,7 +509,7 @@ fluid_ostream_t fluid_socket_get_ostream(fluid_socket_t sock);
     /* GStatBuf has not been introduced yet, manually typedef to what they had at that time:
      * https://github.com/GNOME/glib/blob/e7763678b56e3be073cc55d707a6e92fc2055ee0/glib/gstdio.h#L98-L115
      */
-    #if defined(WIN32) || HAVE_WINDOWS_H // somehow reliably mock G_OS_WIN32??
+    #if defined(_WIN32) || HAVE_WINDOWS_H // somehow reliably mock G_OS_WIN32??
         // Any effort from our side to reliably mock GStatBuf on Windows is in vain. E.g. glib-2.16 is broken as it uses struct stat rather than struct _stat32 on Win x86.
         // Disable it (the user has been warned by cmake).
         #undef fluid_stat
@@ -501,6 +524,8 @@ typedef GStatBuf fluid_stat_buf_t;
 #endif
 
 FILE* fluid_file_open(const char* filename, const char** errMsg);
+fluid_long_long_t fluid_file_tell(FILE* f);
+
 
 /* Profiling */
 #if WITH_PROFILING
@@ -510,11 +535,11 @@ FILE* fluid_file_open(const char* filename, const char** errMsg);
 
 /*
   -----------------------------------------------------------------------------
-  Shell task side |    Profiling interface              |  Audio task side
+  Shell task side |    Profiling interface               |  Audio task side
   -----------------------------------------------------------------------------
-  profiling       |    Internal    |      |             |      Audio
-  command   <---> |<-- profling -->| Data |<--macros -->| <--> rendering
-  shell           |    API         |      |             |      API
+  profiling       |    Internal     |      |             |      Audio
+  command   <---> |<-- profiling -->| Data |<--macros -->| <--> rendering
+  shell           |    API          |      |             |      API
 
 */
 
@@ -561,7 +586,7 @@ int fluid_profile_is_cancel_req(void);
  1) Adds #define FLUID_PROFILE_CANCEL
  2) Adds the necessary code inside fluid_profile_is_cancel() see fluid_sys.c
 */
-#if defined(WIN32)      /* Profile cancellation is supported for Windows */
+#if defined(_WIN32)      /* Profile cancellation is supported for Windows */
 #define FLUID_PROFILE_CANCEL
 
 #elif defined(__OS2__)  /* OS/2 specific stuff */
@@ -716,7 +741,7 @@ enum
     Floating point exceptions
 
     fluid_check_fpe() checks for "unnormalized numbers" and other
-    exceptions of the floating point processsor.
+    exceptions of the floating point processor.
 */
 #ifdef FPE_CHECK
 #define fluid_check_fpe(expl) fluid_check_fpe_i386(expl)
