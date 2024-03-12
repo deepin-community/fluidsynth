@@ -4,7 +4,7 @@ Source: https://github.com/FluidSynth/fluidsynth
 
 Files: *
 Copyright:
- 2000-2021, Peter Hanappe and others.
+ 2000-2023, Peter Hanappe and others.
  2018, Carlo Bramini
  2003, Markus Nentwig
  1999-2001, Josh Green
@@ -24,17 +24,13 @@ Copyright:
  2003, Peter Hanappe and others.
 License: LGPL-2+
 
-Files: doc/example.c
- doc/fluidsynth_arpeggio.c
- doc/fluidsynth_fx.c
- doc/fluidsynth_metronome.c
- doc/fluidsynth_simple.c
+Files: doc/examples/*
 Copyright: NONE
 License: Public-domain
  This code is in the public domain.
 
 Files: doc/fluidsynth-v20-devdoc.txt
-Copyright: 2003-2021, Peter Hanappe, Conrad Berhörster, Antoine Schmitt, Pedro López-Cabanillas, Josh Green, David Henningsson, Tom Moebert
+Copyright: 2003-2023, Peter Hanappe, Conrad Berhörster, Antoine Schmitt, Pedro López-Cabanillas, Josh Green, David Henningsson, Tom Moebert
 License: CC-BY-SA-3.0
 
 Files:
@@ -52,6 +48,7 @@ Copyright:
  2010-2013 Alessio Treglia <alessio@debian.org>
  2015-2018 Jaromír Mikeš <mira.mikes@seznam.cz>
  2017-2019 Fabian Greffrath <fabian@debian.org>
+ 2020-2023 Dennis Braun <snd@debian.org>
 License: LGPL-2+
 
 License: LGPL-2.1+
@@ -106,7 +103,7 @@ License: LGPL-2+
  You should have received a copy of the GNU Library General Public
  License along with this library; if not, write to the Free Software
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-X-Comment: On Debian systems, the complete text of the GNU Library General Public
+Comment: On Debian systems, the complete text of the GNU Library General Public
  License version 2 can be found in `/usr/share/common-licenses/LGPL-2'.
 
 License: CC-BY-SA-3.0

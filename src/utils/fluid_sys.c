@@ -21,7 +21,7 @@
 #include "fluid_sys.h"
 
 
-#if WITH_READLINE
+#if READLINE_SUPPORT
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif
@@ -30,7 +30,7 @@
 #include "fluid_rtkit.h"
 #endif
 
-#if HAVE_PTHREAD_H && !defined(WIN32)
+#if HAVE_PTHREAD_H && !defined(_WIN32)
 // Do not include pthread on windows. It includes winsock.h, which collides with ws2tcpip.h from fluid_sys.h
 // It isn't need on Windows anyway.
 #include <pthread.h>
@@ -132,7 +132,7 @@ fluid_default_log_function(int level, const char *message, void *data)
 {
     FILE *out;
 
-#if defined(WIN32)
+#if defined(_WIN32)
     out = stdout;
 #else
     out = stderr;
@@ -222,9 +222,73 @@ void* fluid_alloc(size_t len)
 }
 
 /**
- * Convenience wrapper for free() that satisfies at least C90 requirements.
- * Especially useful when using fluidsynth with programming languages that do not provide malloc() and free().
- * @note Only use this function when the API documentation explicitly says so. Otherwise use adequate \c delete_fluid_* functions.
+ * Open a file with a UTF-8 string, even in Windows
+ * @param filename The name of the file to open
+ * @param mode The mode to open the file in
+ */
+FILE *fluid_fopen(const char *filename, const char *mode)
+{
+#if defined(_WIN32)
+    wchar_t *wpath = NULL, *wmode = NULL;
+    FILE *file = NULL;
+    int length;
+    if ((length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, NULL, 0)) == 0)
+    {
+        FLUID_LOG(FLUID_ERR, "Unable to perform MultiByteToWideChar() conversion for filename '%s'. Error was: '%s'", filename, fluid_get_windows_error());
+        errno = EINVAL;
+        goto error_recovery;
+    }
+    
+    wpath = FLUID_MALLOC(length * sizeof(wchar_t));
+    if (wpath == NULL)
+    {
+        FLUID_LOG(FLUID_PANIC, "Out of memory.");
+        errno = EINVAL;
+        goto error_recovery;
+    }
+
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, wpath, length);
+
+    if ((length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mode, -1, NULL, 0)) == 0)
+    {
+        FLUID_LOG(FLUID_ERR, "Unable to perform MultiByteToWideChar() conversion for mode '%s'. Error was: '%s'", mode, fluid_get_windows_error());
+        errno = EINVAL;
+        goto error_recovery;
+    }
+
+    wmode = FLUID_MALLOC(length * sizeof(wchar_t));
+    if (wmode == NULL)
+    {
+        FLUID_LOG(FLUID_PANIC, "Out of memory.");
+        errno = EINVAL;
+        goto error_recovery;
+    }
+
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mode, -1, wmode, length);
+
+    file = _wfopen(wpath, wmode);
+
+error_recovery:
+    FLUID_FREE(wpath);
+    FLUID_FREE(wmode);
+
+    return file;
+#else
+    return fopen(filename, mode);
+#endif
+}
+
+/**
+ * Wrapper for free() that satisfies at least C90 requirements.
+ *
+ * @param ptr Pointer to memory region that should be freed
+ *
+ * @note Only use this function when the API documentation explicitly says so. Otherwise use
+ * adequate \c delete_fluid_* functions.
+ *
+ * @warning Calling ::free() on memory that is advised to be freed with fluid_free() results in undefined behaviour!
+ * (cf.: "Potential Errors Passing CRT Objects Across DLL Boundaries" found in MS Docs)
+ *
  * @since 2.0.7
  */
 void fluid_free(void* ptr)
@@ -323,17 +387,17 @@ void fluid_msleep(unsigned int msecs)
  */
 unsigned int fluid_curtime(void)
 {
-    float now;
-    static float initial_time = 0;
+    double now;
+    static double initial_time = 0;
 
     if(initial_time == 0)
     {
-        initial_time = (float)fluid_utime();
+        initial_time = fluid_utime();
     }
 
-    now = (float)fluid_utime();
+    now = fluid_utime();
 
-    return (unsigned int)((now - initial_time) / 1000.0f);
+    return (unsigned int)((now - initial_time) / 1000.0);
 }
 
 /**
@@ -351,12 +415,12 @@ fluid_utime(void)
 
 #if GLIB_MAJOR_VERSION == 2 && GLIB_MINOR_VERSION >= 28
     /* use high precision monotonic clock if available (g_monotonic_time().
-     * For Winfdows, if this clock is actually implemented as low prec. clock
+     * For Windows, if this clock is actually implemented as low prec. clock
      * (i.e. in case glib is too old), high precision performance counter are
      * used instead.
      * see: https://bugzilla.gnome.org/show_bug.cgi?id=783340
      */
-#if defined(WITH_PROFILING) &&  defined(WIN32) &&\
+#if defined(WITH_PROFILING) &&  defined(_WIN32) &&\
 	/* glib < 2.53.3 */\
 	(GLIB_MINOR_VERSION <= 53 && (GLIB_MINOR_VERSION < 53 || GLIB_MICRO_VERSION < 3))
     /* use high precision performance counter. */
@@ -385,7 +449,7 @@ fluid_utime(void)
 
 
 
-#if defined(WIN32)      /* Windoze specific stuff */
+#if defined(_WIN32)      /* Windoze specific stuff */
 
 void
 fluid_thread_self_set_prio(int prio_level)
@@ -446,7 +510,7 @@ fluid_thread_self_set_prio(int prio_level)
  *               Floating point exceptions
  *
  *  The floating point exception functions were taken from Ircam's
- *  jMax source code. http://www.ircam.fr/jmax
+ *  jMax source code. https://www.ircam.fr/jmax
  *
  *  FIXME: check in config for i386 machine
  *
@@ -526,11 +590,11 @@ void fluid_clear_fpe_i386(void)
 
 /*
   -----------------------------------------------------------------------------
-  Shell task side |    Profiling interface              |  Audio task side
+  Shell task side |    Profiling interface               |  Audio task side
   -----------------------------------------------------------------------------
-  profiling       |    Internal    |      |             |      Audio
-  command   <---> |<-- profling -->| Data |<--macros -->| <--> rendering
-  shell           |    API         |      |             |      API
+  profiling       |    Internal     |      |             |      Audio
+  command   <---> |<-- profiling -->| Data |<--macros -->| <--> rendering
+  shell           |    API          |      |             |      API
 
 */
 /* default parameters for shell command "prof_start" in fluid_sys.c */
@@ -800,7 +864,7 @@ int fluid_profile_is_cancel_req(void)
 {
 #ifdef FLUID_PROFILE_CANCEL
 
-#if defined(WIN32)      /* Windows specific stuff */
+#if defined(_WIN32)      /* Windows specific stuff */
     /* Profile cancellation is supported for Windows */
     /* returns TRUE if key <ENTER> is depressed */
     return(GetAsyncKeyState(VK_RETURN) & 0x1);
@@ -899,6 +963,7 @@ void fluid_profile_start_stop(unsigned int end_ticks, short clear_data)
 
             /* Clears profile data */
             if(clear_data == 0)
+            {
                 for(i = 0; i < FLUID_PROFILE_NBR; i++)
                 {
                     fluid_profile_data[i].min = 1e10;/* min sets to max value */
@@ -908,6 +973,7 @@ void fluid_profile_start_stop(unsigned int end_ticks, short clear_data)
                     fluid_profile_data[i].n_voices = 0; /* voices number */
                     fluid_profile_data[i].n_samples = 0;/* audio samples number */
                 }
+            }
 
             fluid_profile_status = PROFILE_START;	/* starts profiling */
         }
@@ -980,7 +1046,7 @@ new_fluid_thread(const char *name, fluid_thread_func_t func, void *data, int pri
 #if OLD_GLIB_THREAD_API
 
     /* Make sure g_thread_init has been called.
-     * FIXME - Probably not a good idea in a shared library,
+     * Probably not a good idea in a shared library,
      * but what can we do *and* remain backwards compatible? */
     if(!g_thread_supported())
     {
@@ -1242,7 +1308,7 @@ int
 fluid_istream_readline(fluid_istream_t in, fluid_ostream_t out, char *prompt,
                        char *buf, int len)
 {
-#if WITH_READLINE
+#if READLINE_SUPPORT
 
     if(in == fluid_get_stdin())
     {
@@ -1291,7 +1357,7 @@ fluid_istream_gets(fluid_istream_t in, char *buf, int len)
 
     while(--len > 0)
     {
-#ifndef WIN32
+#ifndef _WIN32
         n = read(in, &c, 1);
 
         if(n == -1)
@@ -1381,7 +1447,7 @@ fluid_ostream_printf(fluid_ostream_t out, const char *format, ...)
 
     buf[4095] = 0;
 
-#ifndef WIN32
+#ifndef _WIN32
     return write(out, buf, FLUID_STRLEN(buf));
 #else
     {
@@ -1540,12 +1606,12 @@ fluid_server_socket_t *
 new_fluid_server_socket(int port, fluid_server_func_t func, void *data)
 {
     fluid_server_socket_t *server_socket;
+    struct sockaddr_in addr4;
 #ifdef IPV6_SUPPORT
-    struct sockaddr_in6 addr;
-#else
-    struct sockaddr_in addr;
+    struct sockaddr_in6 addr6;
 #endif
-
+    const struct sockaddr *addr;
+    size_t addr_size;
     fluid_socket_t sock;
 
     fluid_return_val_if_fail(func != NULL, NULL);
@@ -1555,38 +1621,46 @@ new_fluid_server_socket(int port, fluid_server_func_t func, void *data)
         return NULL;
     }
 
+    FLUID_MEMSET(&addr4, 0, sizeof(addr4));
+    addr4.sin_family = AF_INET;
+    addr4.sin_port = htons((uint16_t)port);
+    addr4.sin_addr.s_addr = htonl(INADDR_ANY);
+
 #ifdef IPV6_SUPPORT
-    sock = socket(AF_INET6, SOCK_STREAM, 0);
-
-    if(sock == INVALID_SOCKET)
-    {
-        FLUID_LOG(FLUID_ERR, "Failed to create server socket: %d", fluid_socket_get_error());
-        fluid_socket_cleanup();
-        return NULL;
-    }
-
-    FLUID_MEMSET(&addr, 0, sizeof(addr));
-    addr.sin6_family = AF_INET6;
-    addr.sin6_port = htons((uint16_t)port);
-    addr.sin6_addr = in6addr_any;
-#else
-
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-
-    if(sock == INVALID_SOCKET)
-    {
-        FLUID_LOG(FLUID_ERR, "Failed to create server socket: %d", fluid_socket_get_error());
-        fluid_socket_cleanup();
-        return NULL;
-    }
-
-    FLUID_MEMSET(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons((uint16_t)port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    FLUID_MEMSET(&addr6, 0, sizeof(addr6));
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_port = htons((uint16_t)port);
+    addr6.sin6_addr = in6addr_any;
 #endif
 
-    if(bind(sock, (const struct sockaddr *) &addr, sizeof(addr)) == SOCKET_ERROR)
+#ifdef IPV6_SUPPORT
+    sock = socket(AF_INET6, SOCK_STREAM, 0);
+    addr = (const struct sockaddr *) &addr6;
+    addr_size = sizeof(addr6);
+
+    if(sock == INVALID_SOCKET)
+    {
+        FLUID_LOG(FLUID_WARN, "Failed to create IPv6 server socket: %d (will try with IPv4)", fluid_socket_get_error());
+
+        sock = socket(AF_INET, SOCK_STREAM, 0);
+        addr = (const struct sockaddr *) &addr4;
+        addr_size = sizeof(addr4);
+    }
+
+#else
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    addr = (const struct sockaddr *) &addr4;
+    addr_size = sizeof(addr4);
+#endif
+
+    if(sock == INVALID_SOCKET)
+    {
+        FLUID_LOG(FLUID_ERR, "Failed to create server socket: %d", fluid_socket_get_error());
+        fluid_socket_cleanup();
+        return NULL;
+    }
+
+    if(bind(sock, addr, addr_size) == SOCKET_ERROR)
     {
         FLUID_LOG(FLUID_ERR, "Failed to bind server socket: %d", fluid_socket_get_error());
         fluid_socket_close(sock);
@@ -1664,14 +1738,14 @@ FILE* fluid_file_open(const char* path, const char** errMsg)
     
     FILE* handle = NULL;
     
-    if(!g_file_test(path, G_FILE_TEST_EXISTS))
+    if(!fluid_file_test(path, FLUID_FILE_TEST_EXISTS))
     {
         if(errMsg != NULL)
         {
             *errMsg = ErrExist;
         }
     }
-    else if(!g_file_test(path, G_FILE_TEST_IS_REGULAR))
+    else if(!fluid_file_test(path, FLUID_FILE_TEST_IS_REGULAR))
     {
         if(errMsg != NULL)
         {
@@ -1688,3 +1762,50 @@ FILE* fluid_file_open(const char* path, const char** errMsg)
     
     return handle;
 }
+
+fluid_long_long_t fluid_file_tell(FILE* f)
+{
+#ifdef _WIN32
+    // On Windows, long is only a 32 bit integer. Thus ftell() does not support to handle files >2GiB.
+    // We should use _ftelli64() in this case, however its availability depends on MS CRT and might not be
+    // available on WindowsXP, Win98, etc.
+    //
+    // The web recommends to fallback to _telli64() in this case. However, it's return value differs from
+    // _ftelli64() on Win10: https://github.com/FluidSynth/fluidsynth/pull/629#issuecomment-602238436
+    //
+    // Thus, we use fgetpos().
+    fpos_t pos;
+    if(fgetpos(f, &pos) != 0)
+    {
+        return (fluid_long_long_t)-1L;
+    }
+    return pos;
+#else
+    return ftell(f);
+#endif
+}
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+// not thread-safe!
+char* fluid_get_windows_error(void)
+{
+    static TCHAR err[1024];
+
+    FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM,
+                  NULL,
+                  GetLastError(),
+                  MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+                  err,
+                  sizeof(err)/sizeof(err[0]),
+                  NULL);
+
+#ifdef _UNICODE
+    static char ascii_err[sizeof(err)];
+
+    WideCharToMultiByte(CP_UTF8, 0, err, -1, ascii_err, sizeof(ascii_err)/sizeof(ascii_err[0]), 0, 0);
+    return ascii_err;
+#else
+    return err;
+#endif
+}
+#endif

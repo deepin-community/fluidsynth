@@ -1,3 +1,4 @@
 usr/include/*
 usr/lib/*/libfluidsynth.so
 usr/lib/*/pkgconfig/*
+usr/lib/*/cmake/fluidsynth/*.cmake
