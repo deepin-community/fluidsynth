@@ -1,3 +1,256 @@
+fluidsynth (2.4.4+dfsg-1+deb13u2) trixie; urgency=medium
+
+  * CVE-2025-56225
+
+ -- Moritz Mühlenhoff <jmm@debian.org>  Wed, 04 Mar 2026 20:50:29 +0100
+
+fluidsynth (2.4.4+dfsg-1+deb13u1) trixie; urgency=medium
+
+  * Set the default samplerate to 48000 and buffer size to 512 in the
+    service config file (Closes: #1075976, #1105956).
+
+ -- Fabian Greffrath <fabian@debian.org>  Tue, 02 Sep 2025 15:12:09 +0200
+
+fluidsynth (2.4.4+dfsg-1) unstable; urgency=high
+
+  * New upstream version 2.4.4+dfsg
+    + Fix ordering and dependencies of fluidsynth's systemd service
+      (Closes: #1053245)
+    + Revise fluidsynth's man page (Closes: #1099773)
+    + The CMake variable FLUID_HOST_COMPILER has been superseded by
+      the Autools convention of using environment variables like
+      CC_FOR_BUILD and friends
+  * Remove patch applied upstream introducing support for the
+    *_FOR_BUILD environment variables
+  * Update libfluidsynth3.symbols file
+  * urgency=high for the RC bug fix
+
+ -- Fabian Greffrath <fabian@debian.org>  Mon, 17 Mar 2025 17:26:20 +0100
+
+fluidsynth (2.4.3+dfsg-4) unstable; urgency=medium
+
+  * Mark the fluidsynth package as Multi-Arch: foreign and let the
+    libfluidsynth-dev package depend on it. This is required when
+    using cmake.
+
+ -- Fabian Greffrath <fabian@debian.org>  Fri, 28 Feb 2025 09:12:18 +0100
+
+fluidsynth (2.4.3+dfsg-3) unstable; urgency=medium
+
+  * Replace non-functional cross-building patch with one that applies
+    *_FOR_BUILD flags to the native build
+  * Include buildtools.mk in debian/rules
+  * Remove the Breaks relations against soundfont packages
+    (Closes: #934074)
+  * Bump Standards-Version to 4.7.1
+
+ -- Fabian Greffrath <fabian@debian.org>  Tue, 25 Feb 2025 10:08:58 +0100
+
+fluidsynth (2.4.3+dfsg-2) unstable; urgency=medium
+
+  * Update my Debian packaging copyright
+  * Append CPPFLAGS to CFLAGS for the gentables build
+  * Add new symbols to libfluidsynth3.symbols file
+
+ -- Fabian Greffrath <fabian@debian.org>  Fri, 31 Jan 2025 14:29:00 +0100
+
+fluidsynth (2.4.3+dfsg-1) unstable; urgency=medium
+
+  * Repack upstream tarball without the test-android/ directory
+    (contains a prebuilt Java class file)
+  * Only unset compiler flags for gentables if cross-compilation is
+    detected
+  * New upstream version 2.4.3+dfsg
+
+ -- Fabian Greffrath <fabian@debian.org>  Fri, 31 Jan 2025 12:51:58 +0100
+
+fluidsynth (2.4.3-1) unstable; urgency=medium
+
+  * New upstream version 2.4.3
+  * Add myself to Uploaders
+  * Explicitly build with SDL2 support
+
+ -- Fabian Greffrath <fabian@debian.org>  Fri, 31 Jan 2025 08:35:27 +0100
+
+fluidsynth (2.4.2-1) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Pino Toscano ]
+  * Limit pipewire support only to Linux architectures
+
+  [ Fabian Greffrath ]
+  * New upstream version 2.4.2
+
+ -- Fabian Greffrath <fabian@debian.org>  Fri, 03 Jan 2025 22:24:59 +0100
+
+fluidsynth (2.4.0-1) unstable; urgency=medium
+
+  * New upstream version 2.4.0
+  * Update libfluidsynth3.symbols
+
+ -- Dennis Braun <snd@debian.org>  Sun, 10 Nov 2024 19:28:14 +0100
+
+fluidsynth (2.3.6-1) unstable; urgency=medium
+
+  * New upstream version 2.3.6
+  * Bump Standards-Version to 4.7.0
+  * Use default salsa ci config
+
+ -- Dennis Braun <snd@debian.org>  Sat, 17 Aug 2024 14:30:15 +0200
+
+fluidsynth (2.3.5-1) unstable; urgency=medium
+
+  * New upstream version 2.3.5
+
+ -- Dennis Braun <snd@debian.org>  Fri, 19 Apr 2024 16:10:22 +0200
+
+fluidsynth (2.3.4-1) unstable; urgency=medium
+
+  * New upstream version 2.3.4
+
+ -- Dennis Braun <snd@debian.org>  Wed, 27 Sep 2023 20:01:10 +0200
+
+fluidsynth (2.3.3-2.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Fixup previous upload, also runtime depend on libpipewire-0.3-dev,
+    on libfluidsynth-dev (Closes: #1051819)
+
+ -- Gianfranco Costamagna <locutusofborg@debian.org>  Thu, 14 Sep 2023 07:22:04 +0200
+
+fluidsynth (2.3.3-2) unstable; urgency=medium
+
+  * Team upload.
+  * Enable pipewire support (Closes: #1051819).
+
+ -- Nicholas D Steeves <sten@debian.org>  Tue, 12 Sep 2023 20:52:50 -0400
+
+fluidsynth (2.3.3-1) unstable; urgency=medium
+
+  * New upstream version 2.3.3
+  * Bump d/copyright years
+  * d/watch: Use @ARCHIVE_EXT@
+
+ -- Dennis Braun <snd@debian.org>  Sun, 18 Jun 2023 18:50:51 +0200
+
+fluidsynth (2.3.2-1) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Dennis Braun ]
+  * New upstream version 2.3.2
+  * Drop MIDI files patch applied by upstream
+  * Refresh symbols
+
+ -- Fabian Greffrath <fabian@debian.org>  Tue, 13 Jun 2023 14:38:51 +0200
+
+fluidsynth (2.3.1-2) unstable; urgency=medium
+
+  * Team upload.
+  * Apply patch from upstream to fix seamless looping between MIDI
+    files.
+
+ -- Fabian Greffrath <fabian@debian.org>  Tue, 18 Apr 2023 07:48:30 +0200
+
+fluidsynth (2.3.1-1) unstable; urgency=medium
+
+  * New upstream version 2.3.1
+  * Prefer libjack-dev over libjack-jackd2-dev
+  * Bump Standards-Version to 4.6.2
+  * Change my email address
+
+ -- Dennis Braun <snd@debian.org>  Fri, 30 Dec 2022 16:10:11 +0100
+
+fluidsynth (2.3.0-1) unstable; urgency=medium
+
+  * New upstream version 2.3.0
+  * Add FluidSynth*.cmake files to the dev package
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Sat, 24 Sep 2022 23:04:31 +0200
+
+fluidsynth (2.2.9-1) unstable; urgency=medium
+
+  * New upstream version 2.2.9
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Sun, 11 Sep 2022 15:52:57 +0200
+
+fluidsynth (2.2.8-1) unstable; urgency=medium
+
+  * New upstream version 2.2.8
+  * Use libjack-jackd2-dev as preferable B-D and libjack-dev as optional
+    and the same for Depends of libfluidsynth-dev
+  * Bump Standards Version to 4.6.1
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Sun, 17 Jul 2022 12:40:53 +0200
+
+fluidsynth (2.2.7-1) unstable; urgency=medium
+
+  [ Pino Toscano ]
+  * libfluidsynth-dev: limit libsystemd-dev dependency to Linux OSes
+  * Limit libasound2-dev build & runtime dependency to Linux OSes
+  * d/rules: drop -Denable-alsa=off for non-Linux OSes
+  * Limit libdbus-1-dev build & runtime dependency to Linux OSes
+  * d/rules: simplify check for non-Linux architectures
+
+  [ Dennis Braun ]
+  * New upstream version 2.2.7
+  * Update symbols file
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Wed, 04 May 2022 16:41:50 +0200
+
+fluidsynth (2.2.5-1) unstable; urgency=medium
+
+  [ Debian Janitor ]
+  * Fix day-of-week for changelog entry 1.0.9+dfsg-2
+  * Remove constraints unnecessary since buster
+
+  [ Dennis Braun ]
+  * New upstream version 2.2.5
+  * Fix field name typo in debian/copyright (X-Comment => Comment).
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Thu, 03 Feb 2022 23:02:43 +0100
+
+fluidsynth (2.2.4-2) unstable; urgency=medium
+
+  * Update Depends for libfluidsynth-dev and for the autopkgtest
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Thu, 25 Nov 2021 21:08:08 +0100
+
+fluidsynth (2.2.4-1) unstable; urgency=medium
+
+  * New upstream version 2.2.4
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Thu, 25 Nov 2021 17:50:19 +0100
+
+fluidsynth (2.2.3-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Sun, 21 Nov 2021 18:13:22 +0100
+
+fluidsynth (2.2.3-1) experimental; urgency=medium
+
+  [ Dennis Braun ]
+  * New upstream version 2.2.3
+  * Bump Standards-Version to 4.6.0
+  * Bump soname libfluidsynth2 to libfluidsynth3
+  * d/copyright: Update entry for doc/examples
+  * d/copyright: Add myself to the d/ section
+  * Update examples installation
+  * d/rules: override_dh_auto_test because the tests fail
+  * Update symbols file
+
+  [ Sebastian Ramacher ]
+  * debian/libfluidsynth3.symbols:
+    - Remove dropped symbol
+    - Mark template instantiations as optional
+  * debian/rules:
+    - Use /usr/share/dpkg/architecture.mk
+    - Remove unnecessary argument to dh
+
+ -- Dennis Braun <d_braun@kabelmail.de>  Sat, 23 Oct 2021 19:02:57 +0200
+
 fluidsynth (2.1.7-1.1) unstable; urgency=medium
 
   * Non-maintainer upload.
@@ -466,7 +719,7 @@ fluidsynth (1.0.9+dfsg-2) unstable; urgency=low
   * Enable pulseaudio support (Closes: #531579)
   * Run commands after midi router is created (Closes: #528701)
 
- -- David Henningsson <launchpad.web@epost.diwic.se>  Mon, 18 Jun 2009 19:05:39 +0200
+ -- David Henningsson <launchpad.web@epost.diwic.se>  Thu, 18 Jun 2009 19:05:39 +0200
 
 fluidsynth (1.0.9+dfsg-1.1) unstable; urgency=low
 

@@ -29,8 +29,10 @@ extern "C" {
 
 
 /**
- * @file types.h
+ * @defgroup Types Types
  * @brief Type declarations
+ *
+ * @{
  */
 
 typedef struct _fluid_hashtable_t fluid_settings_t;             /**< Configuration settings instance */
@@ -53,8 +55,6 @@ typedef struct _fluid_shell_t fluid_shell_t;                    /**< Command she
 typedef struct _fluid_server_t fluid_server_t;                  /**< TCP/IP shell server instance */
 typedef struct _fluid_event_t fluid_event_t;                    /**< Sequencer event */
 typedef struct _fluid_sequencer_t fluid_sequencer_t;            /**< Sequencer instance */
-typedef struct _fluid_ramsfont_t fluid_ramsfont_t;              /**< RAM SoundFont */
-typedef struct _fluid_rampreset_t fluid_rampreset_t;            /**< RAM SoundFont preset */
 typedef struct _fluid_cmd_handler_t fluid_cmd_handler_t;        /**< Shell Command Handler */
 typedef struct _fluid_ladspa_fx_t fluid_ladspa_fx_t;            /**< LADSPA effects instance */
 typedef struct _fluid_file_callbacks_t fluid_file_callbacks_t;  /**< Callback struct to perform custom file loading of soundfonts */
@@ -63,6 +63,18 @@ typedef int fluid_istream_t;    /**< Input stream descriptor */
 typedef int fluid_ostream_t;    /**< Output stream descriptor */
 
 typedef short fluid_seq_id_t; /**< Unique client IDs used by the sequencer and #fluid_event_t, obtained by fluid_sequencer_register_client() and fluid_sequencer_register_fluidsynth() */
+
+#if defined(_MSC_VER) && (_MSC_VER < 1800)
+typedef __int64 fluid_long_long_t; // even on 32bit windows
+#else
+/**
+ * A typedef for C99's type long long, which is at least 64-bit wide, as guaranteed by the C99.
+ * @p __int64 will be used as replacement for VisualStudio 2010 and older.
+ */
+typedef long long fluid_long_long_t;
+#endif
+
+/** @} */
 
 #ifdef __cplusplus
 }

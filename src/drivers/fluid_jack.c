@@ -38,8 +38,6 @@
 #include <jack/jack.h>
 #include <jack/midiport.h>
 
-#include "fluid_lash.h"
-
 
 typedef struct _fluid_jack_audio_driver_t fluid_jack_audio_driver_t;
 typedef struct _fluid_jack_midi_driver_t fluid_jack_midi_driver_t;
@@ -59,8 +57,6 @@ struct _fluid_jack_audio_driver_t
 {
     fluid_audio_driver_t driver;
     fluid_jack_client_t *client_ref;
-
-    int audio_channels;
 
     jack_port_t **output_ports;
     int num_output_ports;
@@ -164,7 +160,7 @@ new_fluid_jack_client(fluid_settings_t *settings, int isaudio, void *driver)
     fluid_mutex_lock(last_client_mutex);      /* ++ lock last_client */
 
     /* If the last client uses the same server and is not the same type (audio or MIDI),
-     * then re-use the client. */
+     * then reuse the client. */
     if(last_client &&
             (last_client->server != NULL && server != NULL && FLUID_STRCMP(last_client->server, server) == 0) &&
             ((!isaudio && last_client->midi_driver == NULL) || (isaudio && last_client->audio_driver == NULL)))
@@ -266,19 +262,6 @@ new_fluid_jack_client(fluid_settings_t *settings, int isaudio, void *driver)
         FLUID_LOG(FLUID_ERR, "Failed to activate Jack client");
         goto error_recovery;
     }
-
-    /* tell the lash server our client name */
-#ifdef HAVE_LASH
-    {
-        int enable_lash = 0;
-        fluid_settings_getint(settings, "lash.enable", &enable_lash);
-
-        if(enable_lash)
-        {
-            fluid_lash_jack_client_name(fluid_lash_client, name);
-        }
-    }
-#endif /* HAVE_LASH */
 
     client_ref->server = server;        /* !! takes over allocation */
     server = NULL;      /* Set to NULL so it doesn't get freed below */
@@ -503,9 +486,7 @@ fluid_jack_client_register_ports(void *driver, int isaudio, jack_client_t *clien
         {
             FLUID_LOG(FLUID_INFO, "Jack sample rate mismatch, adjusting."
                   " (synth.sample-rate=%lu, jackd=%lu)", (unsigned long)sample_rate, jack_srate);
-            fluid_synth_set_sample_rate(synth, jack_srate);
-            /* Changing sample rate is non RT, so make sure we process it and/or other things now */
-            fluid_synth_process_event_queue(synth);
+            fluid_synth_set_sample_rate_immediately(synth, jack_srate);
         }
         else
         {
@@ -611,24 +592,21 @@ new_fluid_jack_audio_driver2(fluid_settings_t *settings, fluid_audio_func_t func
 
     /* connect the ports. */
 
-
-    /* FIXME: should be done by a patchbay application */
-
     /* find some physical ports and connect to them */
     fluid_settings_getint(settings, "audio.jack.autoconnect", &autoconnect);
 
     if(autoconnect)
     {
-        jack_ports = jack_get_ports(client, NULL, NULL, JackPortIsInput | JackPortIsPhysical);
+        jack_ports = jack_get_ports(client, NULL, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput | JackPortIsPhysical);
 
-        if(jack_ports)
+        if(jack_ports && jack_ports[0])
         {
-            int err;
+            int err, o = 0;
             int connected = 0;
 
-            for(i = 0; jack_ports[i] && i < 2 * dev->num_output_ports; ++i)
+            for(i = 0; i < 2 * dev->num_output_ports; ++i)
             {
-                err = jack_connect(client, jack_port_name(dev->output_ports[i]), jack_ports[i]);
+                err = jack_connect(client, jack_port_name(dev->output_ports[i]), jack_ports[o++]);
 
                 if(err)
                 {
@@ -637,12 +615,18 @@ new_fluid_jack_audio_driver2(fluid_settings_t *settings, fluid_audio_func_t func
                 else
                 {
                     connected++;
+                }
+
+                if(!jack_ports[o])
+                {
+                    o = 0;
                 }
             }
 
-            for(i = 0; jack_ports[i] && i < 2 * dev->num_fx_ports; ++i)
+            o = 0;
+            for(i = 0; i < 2 * dev->num_fx_ports; ++i)
             {
-                err = jack_connect(client, jack_port_name(dev->fx_ports[i]), jack_ports[i]);
+                err = jack_connect(client, jack_port_name(dev->fx_ports[i]), jack_ports[o++]);
 
                 if(err)
                 {
@@ -651,6 +635,11 @@ new_fluid_jack_audio_driver2(fluid_settings_t *settings, fluid_audio_func_t func
                 else
                 {
                     connected++;
+                }
+
+                if(!jack_ports[o])
+                {
+                    o = 0;
                 }
             }
 
@@ -755,6 +744,7 @@ fluid_jack_driver_process(jack_nframes_t nframes, void *arg)
     }
     else
     {
+        int res;
         fluid_audio_func_t callback = (audio_driver->callback != NULL) ? audio_driver->callback : (fluid_audio_func_t) fluid_synth_process;
 
         for(i = 0; i < audio_driver->num_output_ports; i++)
@@ -781,12 +771,18 @@ fluid_jack_driver_process(jack_nframes_t nframes, void *arg)
             FLUID_MEMSET(audio_driver->fx_bufs[k], 0, nframes * sizeof(float));
         }
 
-        return callback(audio_driver->data,
+        res = callback(audio_driver->data,
                         nframes,
                         audio_driver->num_fx_ports * 2,
                         audio_driver->fx_bufs,
                         audio_driver->num_output_ports * 2,
                         audio_driver->output_bufs);
+        if(res != FLUID_OK)
+        {
+            const char *cb_func_name = (audio_driver->callback != NULL) ? "Custom audio callback function" : "fluid_synth_process()";
+            FLUID_LOG(FLUID_PANIC, "%s returned an error. As a consequence, fluidsynth will now be removed from Jack's processing loop.", cb_func_name);
+        }
+        return res;
     }
 }
 

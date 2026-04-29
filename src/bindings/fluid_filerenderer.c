@@ -171,22 +171,24 @@ fluid_file_renderer_settings(fluid_settings_t *settings)
 
 /**
  * Create a new file renderer and open the file.
+ *
  * @param synth The synth that creates audio data.
  * @return the new object, or NULL on failure
- * @since 1.1.0
  *
- * NOTE: Available file types and formats depends on if libfluidsynth was
+ * @note Available file types and formats depends on if libfluidsynth was
  * built with libsndfile support or not.  If not then only RAW 16 bit output is
  * supported.
  *
  * Uses the following settings from the synth object:
- *   - audio.file.name: Output filename
- *   - audio.file.type: File type, "auto" tries to determine type from filename
+ *   - \ref settings_audio_file_name : Output filename
+ *   - \ref settings_audio_file_type : File type, "auto" tries to determine type from filename
  *     extension with fallback to "wav".
- *   - audio.file.format: Audio format
- *   - audio.file.endian: Endian byte order, "auto" for file type's default byte order
- *   - audio.period-size: Size of audio blocks to process
- *   - synth.sample-rate: Sample rate to use
+ *   - \ref settings_audio_file_format : Audio format
+ *   - \ref settings_audio_file_endian : Endian byte order, "auto" for file type's default byte order
+ *   - \ref settings_audio_period-size : Size of audio blocks to process
+ *   - \ref settings_synth_sample-rate : Sample rate to use
+ *
+ * @since 1.1.0
  */
 fluid_file_renderer_t *
 new_fluid_file_renderer(fluid_synth_t *synth)
@@ -197,6 +199,7 @@ new_fluid_file_renderer(fluid_synth_t *synth)
     double samplerate;
     int retval;
 #endif
+    int audio_channels;
     char *filename = NULL;
     fluid_file_renderer_t *dev;
 
@@ -231,6 +234,7 @@ new_fluid_file_renderer(fluid_synth_t *synth)
     }
 
     fluid_settings_dupstr(synth->settings, "audio.file.name", &filename);
+    fluid_settings_getint(synth->settings, "synth.audio-channels", &audio_channels);
 
     if(filename == NULL)
     {
@@ -284,9 +288,43 @@ new_fluid_file_renderer(fluid_synth_t *synth)
         FLUID_LOG(FLUID_ERR, "Invalid or unsupported audio file format settings");
         goto error_recovery;
     }
-
+    
+#if defined( _WIN32 ) && defined( _UNICODE )
+    if (0 == FLUID_STRCMP("-", filename))
+    {
+        dev->sndfile = sf_open(filename, SFM_WRITE, &info);
+    }
+    else
+    {
+        int u16_count;
+        LPWSTR wc_filename;
+        dev->sndfile = NULL;
+        
+               // utf-8 filename to utf-16 wc_filename
+        if (1 > (u16_count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, NULL, 0)))
+        {
+            FLUID_LOG(FLUID_ERR, "Failed to convert UTF8 string to wide char string");
+        }
+        else if (NULL == (wc_filename = (LPWSTR)FLUID_ARRAY(WCHAR, u16_count)))
+        {
+            FLUID_LOG(FLUID_ERR, "Out of memory");
+        }
+        else
+        {
+            if (u16_count != MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename, -1, wc_filename, u16_count))
+            {
+                FLUID_LOG(FLUID_ERR, "Failed to convert UTF8 string to wide char string");
+            }
+            else
+            {
+                dev->sndfile = sf_wchar_open(wc_filename, SFM_WRITE, &info);
+            }
+            FLUID_FREE(wc_filename);
+        }
+    }
+#else
     dev->sndfile = sf_open(filename, SFM_WRITE, &info);
-
+#endif
     if(!dev->sndfile)
     {
         FLUID_LOG(FLUID_ERR, "Failed to open audio file '%s' for writing", filename);
@@ -307,6 +345,11 @@ new_fluid_file_renderer(fluid_synth_t *synth)
     }
 
 #endif
+
+    if(audio_channels != 1)
+    {
+        FLUID_LOG(FLUID_WARN, "The file-renderer currently only supports a single stereo channel. You have provided %d stereo channels. Audio may sound strange or incomplete.", audio_channels);
+    }
 
     FLUID_FREE(filename);
     return dev;

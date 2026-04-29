@@ -1,14 +1,14 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.5)
 
-# remove $CC from the current environment and by that force cmake to look for a (working) C compiler,
-# which hopefully will be the host compiler
-unset(ENV{CC})
+# Set the CC, CFLAGS and LDFLAGS variables to the corresponding *_FOR_BUILD environment variables.
+# If the CC_FOR_BUILD environment variable is unset or empty, this will unset the CC CMake variable
+# and by that force CMake to look for a (working) C compiler, which hopefully will be the host compiler.
+set(ENV{CC} "$ENV{CC_FOR_BUILD}")
 
-# also unset $CFLAGS to avoid passing any cross compilation flags to the host compiler
-unset(ENV{CFLAGS})
+# CMake is notorious for ignoring the CPPFLAGS variable, so explicitly append it to the CFLAGS variable here.
+set(ENV{CFLAGS} "$ENV{CFLAGS_FOR_BUILD} $ENV{CPPFLAGS_FOR_BUILD}")
 
-# linker flags as well
-unset(ENV{LDFLAGS})
+set(ENV{LDFLAGS} "$ENV{LDFLAGS_FOR_BUILD}")
 
 project (gentables C)
 
@@ -21,13 +21,13 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR})
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../)
-
 # Add the executable that generates the table
 add_executable( make_tables
                 make_tables.c
                 gen_conv.c
                 gen_rvoice_dsp.c)
+
+target_include_directories( make_tables PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../ )
 
 if ( WIN32 )
     add_definitions ( -D_USE_MATH_DEFINES -D_CRT_SECURE_NO_WARNINGS )
