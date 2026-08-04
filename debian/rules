@@ -1,14 +1,21 @@
 #!/usr/bin/make -f
 
-ifneq ($(findstring $(DEB_HOST_ARCH_OS),kfreebsd hurd),)
-EXTRA_CONFIGURE_ARGS += -Denable-alsa=off -Denable-dbus=off
-endif
-DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
-
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+DPKG_EXPORT_BUILDTOOLS = 1
+include /usr/share/dpkg/buildtools.mk
+
+include /usr/share/dpkg/architecture.mk
+
+ifneq ($(DEB_HOST_ARCH_OS),linux)
+EXTRA_CONFIGURE_ARGS += -Denable-dbus=off
+endif
+
 %:
-	dh $@ -Scmake --without autoreconf
+	dh $@
 
 override_dh_auto_configure:
 	dh_auto_configure -- \
@@ -17,11 +24,15 @@ override_dh_auto_configure:
 		-DFLUID_DAEMON_ENV_FILE=/etc/default/fluidsynth \
 		-DDEFAULT_SOUNDFONT=/usr/share/sounds/sf3/default-GM.sf3 \
 		-Denable-ladspa=on \
+		-Denable-sdl2=on \
 		$(EXTRA_CONFIGURE_ARGS)
 
 override_dh_install:
 	dh_install
 	mv debian/fluidsynth/etc/default/fluidsynth.conf \
 	   debian/fluidsynth/etc/default/fluidsynth
-	sed -e '/SOUND_FONT/s/#//' \
+	sed -e "/SOUND_FONT\|OTHER_OPTS/s/^#//" \
+	    -e "/OTHER_OPTS/s/'.*'/'-r 48000 -z 512'/" \
 	    -i debian/fluidsynth/etc/default/fluidsynth
+
+override_dh_auto_test:

@@ -20,7 +20,7 @@
 
 #include "fluid_sys.h"
 
-#if !defined(WIN32) && !defined(MACINTOSH)
+#if !defined(_WIN32) && !defined(MACINTOSH)
 #define _GNU_SOURCE
 #endif
 
@@ -29,28 +29,31 @@
 #define GETOPT_SUPPORT 1
 #endif
 
-#ifdef LIBINSTPATCH_SUPPORT
-#include <libinstpatch/libinstpatch.h>
-#endif
-#include "fluid_lash.h"
-
 #ifdef SYSTEMD_SUPPORT
 #include <systemd/sd-daemon.h>
+#endif
+
+#if SDL3_SUPPORT
+#include <SDL3/SDL.h>
 #endif
 
 #if SDL2_SUPPORT
 #include <SDL.h>
 #endif
 
+#if PIPEWIRE_SUPPORT
+#include <pipewire/pipewire.h>
+#endif
+
 void print_usage(void);
 void print_help(fluid_settings_t *settings);
 void print_welcome(void);
 void print_configure(void);
+void fluid_wasapi_device_enumerate(void);
 
 /*
  * the globals
  */
-fluid_cmd_handler_t *cmd_handler = NULL;
 int option_help = 0;		/* set to 1 if "-o help" is specified */
 
 
@@ -121,16 +124,16 @@ int process_o_cmd_line_option(fluid_settings_t *settings, char *optarg)
         }
 
         break;
-
-    case FLUID_STR_TYPE:
-        if(fluid_settings_setstr(settings, optarg, val) != FLUID_OK)
+        
+    case FLUID_STR_TYPE: {
+        char *u8_val = val;
+        if(fluid_settings_setstr(settings, optarg, u8_val) != FLUID_OK)
         {
             fprintf(stderr, "Failed to set string parameter '%s'\n", optarg);
             return FLUID_FAILED;
         }
-
         break;
-
+    }
     default:
         fprintf(stderr, "Setting parameter '%s' not found\n", optarg);
         return FLUID_FAILED;
@@ -308,24 +311,31 @@ fast_render_loop(fluid_settings_t *settings, fluid_synth_t *synth, fluid_player_
 
     1)creating the settings.
     2)reading/setting all options in command line.
-    3)creating the synth.
-    4)loading the soundfonts specified in command line
+    3)read configuration file the first time and execute all "set" commands
+    4)creating the synth.
+    5)loading the soundfonts specified in command line
 	  (multiple soundfonts loading is possible).
-    5)create the audio driver (if not fast rendering).
-    6)create the router.
-    7)create the midi driver connected to the router.
-    8)create a player and add it any midifile specified in command line.
+    6)loading a default soundfont if no soundfont are supplied.
+    7)create the router.
+    8)create the midi driver connected to the router.
+    9)create a player and add it any midifile specified in command line.
 	  (multiple midifiles loading is possible).
-    9)loading a default soundfont if needed before starting the player.
     10)create a command handler.
-    11)reading the configuration file and submit it to the command handler.
-    12)create a tcp shell if any requested.
-    13)create a synchronous user shell if interactive.
-    14)entering fast rendering loop if requested.
+    11)reading the entire configuration file for the second time and submit it
+       to the command handler before starting the player.
+    12)Start the player.
+    13)create a tcp shell if any requested.
+    14)entering fast rendering loop if requested, otherwise
+    15)create the audio driver (i.e synthesis thread) and a synchronous user
+       shell if interactive.
  */
+#if defined(_WIN32) && defined(_UNICODE)
+int wmain(int argc, wchar_t **wargv)
+#else
 int main(int argc, char **argv)
+#endif
 {
-    fluid_settings_t *settings;
+    fluid_settings_t *settings = NULL;
     int result = -1;
     int arg1 = 1;
     char buf[512];
@@ -338,6 +348,7 @@ int main(int argc, char **argv)
     fluid_midi_driver_t *mdriver = NULL;
     fluid_audio_driver_t *adriver = NULL;
     fluid_synth_t *synth = NULL;
+    fluid_cmd_handler_t *cmd_handler = NULL;
 #ifdef NETWORK_SUPPORT
     fluid_server_t *server = NULL;
     int with_server = 0;
@@ -347,17 +358,51 @@ int main(int argc, char **argv)
     int audio_channels = 0;
     int dump = 0;
     int fast_render = 0;
-    static const char optchars[] = "a:C:c:dE:f:F:G:g:hijK:L:lm:nO:o:p:qR:r:sT:Vvz:";
-#ifdef HAVE_LASH
-    int connect_lash = 1;
-    int enabled_lash = 0;		/* set to TRUE if lash gets enabled */
-    fluid_lash_args_t *lash_args;
+    static const char optchars[] = "a:C:c:dE:f:F:G:g:hijK:L:lm:nO:o:p:QqR:r:sT:Vvz:";
 
-    lash_args = fluid_lash_extract_args(&argc, &argv);
+#if defined(_WIN32) && defined(_UNICODE)
+// WC_ERR_INVALID_CHARS is only supported on Windows Vista and newer. To support older Windows, our only chance is to use zero for this flag.
+#ifndef WC_ERR_INVALID_CHARS
+#define WC_ERR_INVALID_CHARS 0
+#endif
+    char **argv = NULL;
+    // console output will be utf-8
+    SetConsoleOutputCP(CP_UTF8);
+    // console input, too
+    SetConsoleCP(CP_UTF8);
+    // conversion of wchar_t (UTF-16) arguments to char (UTF-8)
+    if ((argv = (char **) calloc( argc, sizeof(char *) )) == NULL)
+    {
+        fprintf(stderr, "Out of memory\n");
+        goto cleanup;
+    }
+    else
+    {
+        for (i = 0; i < argc; ++i)
+        {
+            int u8_count = 0;
+            if (1 > (u8_count = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wargv[i], -1, NULL, 0, NULL, NULL)))
+            {
+                fprintf(stderr, "Failed to convert wide char string to UTF8\n");
+                goto cleanup;
+            }
+            else if ((argv[i] = (char *) calloc(u8_count, sizeof(char))) == NULL)
+            {
+                fprintf(stderr, "Out of memory\n");
+                goto cleanup;
+            }
+            else if (u8_count != WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wargv[i], -1, argv[i], u8_count, NULL, NULL))
+            {
+                fprintf(stderr, "Failed to convert wide char string to UTF8\n");
+                goto cleanup;
+            }
+        }
+    }
 #endif
 
 #if SDL2_SUPPORT
-
+    // Tell SDL that it shouldn't intercept signals, otherwise SIGINT and SIGTERM won't quit fluidsynth
+    SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     if(SDL_Init(SDL_INIT_AUDIO) != 0)
     {
         fprintf(stderr, "Warning: Unable to initialize SDL2 Audio: %s", SDL_GetError());
@@ -366,9 +411,12 @@ int main(int argc, char **argv)
     {
         atexit(SDL_Quit);
     }
-
 #endif
 
+#if PIPEWIRE_SUPPORT
+    pw_init(&argc, &argv);
+    atexit(pw_deinit);
+#endif
 
     /* create the settings */
     settings = new_fluid_settings();
@@ -405,6 +453,7 @@ int main(int argc, char **argv)
             {"no-shell", 0, 0, 'i'},
             {"option", 1, 0, 'o'},
             {"portname", 1, 0, 'p'},
+            {"query-audio-devices", 0, 0, 'Q'},
             {"quiet", 0, 0, 'q'},
             {"reverb", 1, 0, 'R'},
             {"sample-rate", 1, 0, 'r'},
@@ -449,7 +498,7 @@ int main(int argc, char **argv)
             {
                 optarg = argv[i];
 
-                if(optarg[0] == '-')
+                if((optarg[0] == '-') && ((optarg[1] != '\0') || (c != 'F')))
                 {
                     printf("Expected argument to option -%c found switch instead\n", c);
                     print_usage();
@@ -582,7 +631,9 @@ int main(int argc, char **argv)
             break;
 
         case 'j':
+#if JACK_SUPPORT
             fluid_settings_setint(settings, "audio.jack.autoconnect", 1);
+#endif
             fluid_settings_setint(settings, "midi.autoconnect", 1);
             break;
 
@@ -602,9 +653,7 @@ int main(int argc, char **argv)
             break;
 
         case 'l':			/* disable LASH */
-#ifdef HAVE_LASH
-            connect_lash = 0;
-#endif
+            // lash support removed in 2.4.0, NOOP
             break;
 
         case 'm':
@@ -666,10 +715,21 @@ int main(int argc, char **argv)
             }
             break;
 
+        case 'Q':
+            print_welcome();
+#ifdef WASAPI_SUPPORT
+            fluid_wasapi_device_enumerate();
+            result = 0;
+#else
+            fprintf(stderr, "Error: This version of fluidsynth was compiled without WASAPI support. Audio device enumeration is not available.");
+            result = 1;
+#endif
+            goto cleanup;
+
         case 'q':
             quiet = 1;
 
-#if defined(WIN32)
+#if defined(_WIN32)
             /* Windows logs to stdout by default, so make sure anything
              * lower than PANIC is not printed either */
             fluid_set_log_function(FLUID_ERR, NULL, NULL);
@@ -735,7 +795,6 @@ int main(int argc, char **argv)
             print_configure();
             result = 0;
             goto cleanup;
-            break;
 
         case 'v':
             fluid_settings_setint(settings, "synth.verbose", TRUE);
@@ -754,7 +813,6 @@ int main(int argc, char **argv)
             printf("Unknown option %c\n", optopt);
             print_usage();
             goto cleanup;
-            break;
 
         default:
             printf("?? getopt returned character code 0%o ??\n", c);
@@ -765,7 +823,6 @@ int main(int argc, char **argv)
             printf("Unknown switch '%c'\n", c);
             print_usage();
             goto cleanup;
-            break;
 #endif
         }	/* end of switch statement */
     }	/* end of loop */
@@ -776,7 +833,8 @@ int main(int argc, char **argv)
     arg1 = i;
 #endif
 
-    if (!quiet) {
+    if (!quiet)
+    {
         print_welcome();
     }
 
@@ -789,19 +847,8 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
-#ifdef WIN32
+#ifdef _WIN32
     SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
-#endif
-
-#ifdef HAVE_LASH
-
-    /* connect to the lash server */
-    if(connect_lash)
-    {
-        enabled_lash = fluid_lash_connect(lash_args);
-        fluid_settings_setint(settings, "lash.enable", enabled_lash ? 1 : 0);
-    }
-
 #endif
 
     /* The 'groups' setting is relevant for LADSPA operation and channel mapping
@@ -833,6 +880,42 @@ int main(int argc, char **argv)
         fluid_settings_setint(settings, "synth.lock-memory", 0);
     }
 
+    if(config_file == NULL)
+    {
+        config_file = fluid_get_userconf(buf, sizeof(buf));
+        if(config_file == NULL || !g_file_test(config_file, G_FILE_TEST_EXISTS))
+        {
+            config_file = fluid_get_sysconf(buf, sizeof(buf));
+        }
+
+        /* if the automatically selected command file does not exist, do not even attempt to open it */
+        if(config_file != NULL && !fluid_file_test(config_file, FLUID_FILE_TEST_EXISTS))
+        {
+            config_file = NULL;
+        }
+    }
+
+    /* Handle set commands before creating the synth */
+    if(config_file != NULL)
+    {
+        cmd_handler = new_fluid_cmd_handler2(settings, NULL, NULL, NULL);
+        if(cmd_handler == NULL)
+        {
+            fprintf(stderr, "Failed to create the early command handler\n");
+            goto cleanup;
+        }
+
+        if(fluid_source(cmd_handler, config_file) < 0)
+        {
+            fprintf(stderr, "Failed to early-execute command configuration file '%s'\n", config_file);
+            /* the command file seems broken, don't read it again */
+            config_file = NULL;
+        }
+
+        delete_fluid_cmd_handler(cmd_handler);
+        cmd_handler = NULL;
+    }
+
     /* create the synthesizer */
     synth = new_fluid_synth(settings);
 
@@ -845,17 +928,41 @@ int main(int argc, char **argv)
     /* load the soundfonts (check that all non options are SoundFont or MIDI files) */
     for(i = arg1; i < argc; i++)
     {
-        if(fluid_is_soundfont(argv[i]))
+        const char *u8_path = argv[i];
+        if(fluid_is_midifile(u8_path))
         {
-            if(fluid_synth_sfload(synth, argv[i], 1) == -1)
+            continue;
+        }
+
+        if(fluid_is_soundfont(u8_path))
+        {
+            if(fluid_synth_sfload(synth, u8_path, 1) == -1)
             {
                 fprintf(stderr, "Failed to load the SoundFont %s\n", argv[i]);
             }
         }
-        else if(!fluid_is_midifile(argv[i]))
+        else
         {
             fprintf(stderr, "Parameter '%s' not a SoundFont or MIDI file or error occurred identifying it.\n", argv[i]);
         }
+    }
+
+    /* Try to load the default soundfont, if no soundfont specified */
+    if(fluid_synth_get_sfont(synth, 0) == NULL)
+    {
+        char *s;
+
+        if(fluid_settings_dupstr(settings, "synth.default-soundfont", &s) != FLUID_OK)
+        {
+            s = NULL;
+        }
+
+        if((s != NULL) && (s[0] != '\0'))
+        {
+            fluid_synth_sfload(synth, s, 1);
+        }
+
+        FLUID_FREE(s);
     }
 
     router = new_fluid_midi_router(
@@ -889,10 +996,11 @@ int main(int argc, char **argv)
         }
     }
 
-    /* play the midi files, if any */
+    /* create the player and add any midi files, if requested */
     for(i = arg1; i < argc; i++)
     {
-        if((argv[i][0] != '-') && fluid_is_midifile(argv[i]))
+        const char *u8_path = argv[i];
+        if((u8_path[0] != '-') && fluid_is_midifile(u8_path))
         {
             if(player == NULL)
             {
@@ -911,36 +1019,12 @@ int main(int argc, char **argv)
                 }
             }
 
-            fluid_player_add(player, argv[i]);
+            fluid_player_add(player, u8_path);
         }
-    }
-
-    /* start the player */
-    if(player != NULL)
-    {
-        /* Try to load the default soundfont, if no soundfont specified */
-        if(fluid_synth_get_sfont(synth, 0) == NULL)
-        {
-            char *s;
-
-            if(fluid_settings_dupstr(settings, "synth.default-soundfont", &s) != FLUID_OK)
-            {
-                s = NULL;
-            }
-
-            if((s != NULL) && (s[0] != '\0'))
-            {
-                fluid_synth_sfload(synth, s, 1);
-            }
-
-            FLUID_FREE(s);
-        }
-
-        fluid_player_play(player);
     }
 
     /* try to load and execute the user or system configuration file */
-    cmd_handler = new_fluid_cmd_handler(synth, router);
+    cmd_handler = new_fluid_cmd_handler2(settings, synth, router, player);
 
     if(cmd_handler == NULL)
     {
@@ -948,20 +1032,20 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
-    if(config_file != NULL)
+    if(config_file != NULL && fluid_source(cmd_handler, config_file) < 0)
     {
-        if(fluid_source(cmd_handler, config_file) < 0)
-        {
-            fprintf(stderr, "Failed to execute user provided command configuration file '%s'\n", config_file);
-        }
+        fprintf(stderr, "Failed to execute command configuration file '%s'\n", config_file);
     }
-    else if(fluid_get_userconf(buf, sizeof(buf)) != NULL)
+
+    /* start the player. Must be done after executing commands configuration file.
+       This allows any existing player commands to be run prior the player is started.
+       Example:
+       player_tempo_bpm 60 # set a low tempo
+       player_loop -1      # loop song forever
+    */
+    if(player != NULL)
     {
-        fluid_source(cmd_handler, buf);
-    }
-    else if(fluid_get_sysconf(buf, sizeof(buf)) != NULL)
-    {
-        fluid_source(cmd_handler, buf);
+        fluid_player_play(player);
     }
 
     /* run the server, if requested */
@@ -969,7 +1053,7 @@ int main(int argc, char **argv)
 
     if(with_server)
     {
-        server = new_fluid_server(settings, synth, router);
+        server = new_fluid_server2(settings, synth, router, player);
 
         if(server == NULL)
         {
@@ -984,15 +1068,6 @@ int main(int argc, char **argv)
         }
 
 #endif
-    }
-
-#endif
-
-#ifdef HAVE_LASH
-
-    if(enabled_lash)
-    {
-        fluid_lash_create_thread(synth);
     }
 
 #endif
@@ -1027,7 +1102,7 @@ int main(int argc, char **argv)
 
         if(adriver == NULL)
         {
-            fprintf(stderr, "Failed to create the audio driver\n");
+            fprintf(stderr, "Failed to create the audio driver. Giving up.\n");
             goto cleanup;
         }
 
@@ -1066,13 +1141,14 @@ cleanup:
 #endif
         delete_fluid_server(server);
     }
+    else if(with_server)
+    {
+        result = 1;
+    }
 
 #endif	/* NETWORK_SUPPORT */
 
-    if(cmd_handler != NULL)
-    {
-        delete_fluid_cmd_handler(cmd_handler);
-    }
+    delete_fluid_cmd_handler(cmd_handler);
 
     if(player != NULL)
     {
@@ -1096,6 +1172,17 @@ cleanup:
     delete_fluid_synth(synth);
     delete_fluid_settings(settings);
 
+#if defined(_WIN32) && defined(_UNICODE)
+    if (argv != NULL)
+    {
+        for (i = 0; i < argc; ++i)
+        {
+            free(argv[i]);
+        }
+        free(argv);
+    }
+#endif
+
     return result;
 }
 
@@ -1103,23 +1190,23 @@ cleanup:
  * print_usage
  */
 void
-print_usage()
+print_usage(void)
 {
     fprintf(stderr, "Usage: fluidsynth [options] [soundfonts]\n");
     fprintf(stderr, "Try -h for help.\n");
 }
 
 void
-print_welcome()
+print_welcome(void)
 {
     printf("FluidSynth runtime version %s\n"
-           "Copyright (C) 2000-2021 Peter Hanappe and others.\n"
+           "Copyright (C) 2000-2025 Peter Hanappe and others.\n"
            "Distributed under the LGPL license.\n"
-           "SoundFont(R) is a registered trademark of E-mu Systems, Inc.\n\n",
+           "SoundFont(R) is a registered trademark of Creative Technology Ltd.\n\n",
            fluid_version_str());
 }
 
-void print_configure()
+void print_configure(void)
 {
     puts("FluidSynth executable version " FLUIDSYNTH_VERSION);
     puts("Sample type="
@@ -1139,12 +1226,19 @@ print_help(fluid_settings_t *settings)
 {
     char *audio_options;
     char *midi_options;
+    double ddef;
+    int idef;
 
     audio_options = fluid_settings_option_concat(settings, "audio.driver", NULL);
     midi_options = fluid_settings_option_concat(settings, "midi.driver", NULL);
 
     printf("Usage: \n");
     printf("  fluidsynth [options] [soundfonts] [midifiles]\n");
+#ifndef GETOPT_SUPPORT
+    printf("\nNote:"
+           "\n  This version of fluidsynth was compiled without getopt support."
+           "\n  Thus, the long options are not supported.\n\n");
+#endif
     printf("Possible options:\n");
     printf(" -a, --audio-driver=[label]\n"
            "    The name of the audio driver to use.\n"
@@ -1161,8 +1255,9 @@ print_help(fluid_settings_t *settings)
            "    Load command configuration file (shell commands)\n");
     printf(" -F, --fast-render=[file]\n"
            "    Render MIDI file to raw audio data and store in [file]\n");
+    fluid_settings_getnum_default(settings, "synth.gain", &ddef);
     printf(" -g, --gain\n"
-           "    Set the master gain [0 < gain < 10, default = 0.2]\n");
+           "    Set the master gain [0 < gain < 10, default = def=%0.3g]\n", ddef);
     printf(" -G, --audio-groups\n"
            "    Defines the number of LADSPA audio nodes\n");
     printf(" -h, --help\n"
@@ -1171,14 +1266,14 @@ print_help(fluid_settings_t *settings)
            "    Don't read commands from the shell [default = yes]\n");
     printf(" -j, --connect-jack-outputs\n"
            "    Attempt to connect the jack outputs to the physical ports\n");
+
+    fluid_settings_getint_default(settings, "synth.midi-channels", &idef);
     printf(" -K, --midi-channels=[num]\n"
-           "    The number of midi channels [default = 16]\n");
-#ifdef HAVE_LASH
-    printf(" -l, --disable-lash\n"
-           "    Don't connect to LASH server\n");
-#endif
+           "    The number of midi channels [default = %d]\n", idef);
+
+    fluid_settings_getint_default(settings, "synth.audio-channels", &idef);
     printf(" -L, --audio-channels=[num]\n"
-           "    The number of stereo audio channels [default = 1]\n");
+           "    The number of stereo audio channels [default = %d]\n", idef);
     printf(" -m, --midi-driver=[label]\n"
            "    The name of the midi driver to use.\n"
            "    Valid values: %s\n", midi_options ? midi_options : "ERROR");
@@ -1190,9 +1285,13 @@ print_help(fluid_settings_t *settings)
            "    Audio file format for fast rendering or aufile driver (\"help\" for list)\n");
     printf(" -p, --portname=[label]\n"
            "    Set MIDI port name (alsa_seq, coremidi drivers)\n");
+#ifdef WASAPI_SUPPORT
+    printf(" -Q, --query-audio-devices\n"
+           "    Probe all available soundcards for supported modes, sample-rates and sample-formats.\n");
+#endif
     printf(" -q, --quiet\n"
            "    Do not print welcome message or other informational output\n"
-           "    (Windows only: also suppress all log messages lower than PANIC\n");
+           "    (Windows only: also suppress all log messages lower than PANIC)\n");
     printf(" -r, --sample-rate\n"
            "    Set the sample rate\n");
     printf(" -R, --reverb\n"
