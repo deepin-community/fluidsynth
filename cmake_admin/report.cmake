@@ -1,3 +1,4 @@
+include( SCMRevision )
 
 set ( AUDIO_MIDI_REPORT "\n" )
 
@@ -55,11 +56,23 @@ else ( DART_SUPPORT )
     set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  OS/2 DART:             no\n" )
 endif ( DART_SUPPORT )
 
+if ( KAI_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  OS/2 KAI:              yes\n" )
+else ( KAI_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  OS/2 KAI:              no\n" )
+endif ( KAI_SUPPORT )
+
 if ( OSS_SUPPORT )
     set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  OSS:                   yes\n" )
 else ( OSS_SUPPORT )
     set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  OSS:                   no\n" )
 endif ( OSS_SUPPORT )
+
+if ( PIPEWIRE_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  PipeWire:              yes\n" )
+else ( PIPEWIRE_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  PipeWire:              no\n" )
+endif ( PIPEWIRE_SUPPORT )
 
 if ( PORTAUDIO_SUPPORT )
     set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  PortAudio:             yes\n" )
@@ -78,6 +91,18 @@ if ( SDL2_SUPPORT )
 else ( SDL2_SUPPORT )
     set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  SDL2:                  no\n" )
 endif ( SDL2_SUPPORT )
+
+if ( SDL3_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  SDL3:                  yes\n" )
+else ( SDL3_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  SDL3:                  no\n" )
+endif ( SDL3_SUPPORT )
+
+if ( WASAPI_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  WASAPI:                yes\n" )
+else ( WASAPI_SUPPORT )
+    set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  WASAPI:                no\n" )
+endif ( WASAPI_SUPPORT )
 
 if ( WAVEOUT_SUPPORT )
     set ( AUDIO_MIDI_REPORT "${AUDIO_MIDI_REPORT}  WaveOut:               yes\n" )
@@ -141,12 +166,6 @@ else ( LADSPA_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}  LADSPA support:        no\n" )
 endif ( LADSPA_SUPPORT )
 
-if ( LASH_SUPPORT )
-  set ( MISC_REPORT "${MISC_REPORT}  LASH support:          yes (NOTE: GPL library)\n" )
-else ( LASH_SUPPORT )
-  set ( MISC_REPORT "${MISC_REPORT}  LASH support:          no\n" )
-endif ( LASH_SUPPORT )
-
 if ( NETWORK_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}  NETWORK Support:       yes\n" )
 else ( NETWORK_SUPPORT )
@@ -159,11 +178,11 @@ else ( IPV6_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}    IPV6 Support:        no\n" )
 endif ( IPV6_SUPPORT )
 
-if ( WITH_READLINE )
+if ( READLINE_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}  Readline:              yes (NOTE: GPL library)\n" )
-else ( WITH_READLINE )
+else ( READLINE_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}  Readline:              no\n" )
-endif ( WITH_READLINE )
+endif ( READLINE_SUPPORT )
 
 if ( SYSTEMD_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}  systemd:               yes\n" )
@@ -171,6 +190,25 @@ else ( SYSTEMD_SUPPORT )
   set ( MISC_REPORT "${MISC_REPORT}  systemd:               no\n" )
 endif ( SYSTEMD_SUPPORT )
 
+if ( HAVE_GETOPT_H )
+  set ( MISC_REPORT "${MISC_REPORT}  getopt:                yes\n" )
+else ( HAVE_GETOPT_H )
+  set ( MISC_REPORT "${MISC_REPORT}  getopt:                no\n" )
+endif ( HAVE_GETOPT_H )
+
+if ( WIN32 OR CYGWIN )
+    set ( WINDOWS_REPORT "\nWindows specific info:\n" )
+    if ( windows-version )
+        set ( WINDOWS_REPORT "${WINDOWS_REPORT}  target version:        ${windows-version}\n" )
+    endif ( windows-version )
+    if ( enable-unicode )
+      set ( WINDOWS_REPORT "${WINDOWS_REPORT}  unicode support:       yes\n" )
+    else ( enable-unicode )
+      set ( WINDOWS_REPORT "${WINDOWS_REPORT}  unicode support:       no\n" )
+    endif ( enable-unicode )
+else ( WIN32 OR CYGWIN )
+    set ( WINDOWS_REPORT "")
+endif ( WIN32 OR CYGWIN )
 
 set ( DEVEL_REPORT "\nDeveloper nerds info:\n" )
 
@@ -222,9 +260,18 @@ else ( ENABLE_UBSAN )
   set ( DEVEL_REPORT "${DEVEL_REPORT}  UBSan (debug):         no\n" )
 endif ( ENABLE_UBSAN )
 
+if ( ENABLE_COVERAGE )
+  set ( DEVEL_REPORT "${DEVEL_REPORT}  Coverage:              yes\n" )
+else ( ENABLE_COVERAGE )
+  set ( DEVEL_REPORT "${DEVEL_REPORT}  Coverage:              no\n" )
+endif ( ENABLE_COVERAGE )
+
 message( STATUS 
         "\n**************************************************************\n"
         "Build Summary:\n"
+        "FluidSynth Version:    " ${FLUIDSYNTH_VERSION} "\n"
+        "Library version:       " ${LIB_VERSION_INFO} "\n"
+        "Git revision:          " ${FluidSynth_WC_REVISION} "\n"
         "Build type:            " ${CMAKE_BUILD_TYPE} "\n"
         "Install Prefix:        " ${CMAKE_INSTALL_PREFIX} "\n"
         "\n"
@@ -233,6 +280,7 @@ message( STATUS
         ${INPUTS_REPORT}
         ${RENDERING_REPORT}
         ${MISC_REPORT}
+        ${WINDOWS_REPORT}
         ${DEVEL_REPORT}
          )
 

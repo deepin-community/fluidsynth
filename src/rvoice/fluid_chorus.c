@@ -110,8 +110,8 @@
 
 /* SCALE_WET_WIDTH is a compensation weight factor to get an output
    amplitude (wet) rather independent of the width setting.
-    0: the output amplitude is fully dependant on the width setting.
-   >0: the output amplitude is less dependant on the width setting.
+    0: the output amplitude is fully dependent on the width setting.
+   >0: the output amplitude is less dependent on the width setting.
    With a SCALE_WET_WIDTH of 0.2 the output amplitude is rather
    independent of width setting (see fluid_chorus_set()).
  */
@@ -134,7 +134,7 @@
                         /* and max lfo speed (5 Hz) */
 #define RANGE_MOD_RATE (HIGH_MOD_RATE - LOW_MOD_RATE)
 
-/* some chorus cpu_load measurement dependant of modulation rate: mod_rate
+/* some chorus cpu_load measurement dependent of modulation rate: mod_rate
  (number of chorus blocks: 2)
 
  No stero unit:
@@ -169,10 +169,11 @@
 /* modulator */
 typedef struct
 {
-    fluid_real_t   a1;          /* Coefficient: a1 = 2 * cos(w) */
-    fluid_real_t   buffer1;     /* buffer1 */
-    fluid_real_t   buffer2;     /* buffer2 */
-    fluid_real_t   reset_buffer2;/* reset value of buffer2 */
+    // for sufficient precision members MUST be double! See https://github.com/FluidSynth/fluidsynth/issues/1331
+    double   a1;           /* Coefficient: a1 = 2 * cos(w) */
+    double   buffer1;      /* buffer1 */
+    double   buffer2;      /* buffer2 */
+    double   reset_buffer2;/* reset value of buffer2 */
 } sinus_modulator;
 
 /*-----------------------------------------------------------------------------
@@ -236,6 +237,10 @@ struct _fluid_chorus_t
 /*-----------------------------------------------------------------------------
  Sets the frequency of sinus oscillator.
 
+ For sufficient precision use double precision in set_sinus_frequency() computation !.
+ Never use: fluid_real_t , cosf(), sinf(), FLUID_COS(), FLUID_SIN(), FLUID_M_PI.
+ See https://github.com/FluidSynth/fluidsynth/issues/1331
+
  @param mod pointer on modulator structure.
  @param freq frequency of the oscillator in Hz.
  @param sample_rate sample rate on audio output in Hz.
@@ -244,16 +249,17 @@ struct _fluid_chorus_t
 static void set_sinus_frequency(sinus_modulator *mod,
                                 float freq, float sample_rate, float phase)
 {
-    fluid_real_t w = 2 * FLUID_M_PI * freq / sample_rate; /* initial angle */
-    fluid_real_t a;
+    double w = (2.0 * M_PI) * freq / sample_rate;  /* step phase between each sinus wave sample (in radian) */
+    double a; /* initial phase at which the sinus wave must begin (in radian) */
 
-    mod->a1 = 2 * FLUID_COS(w);
+    // DO NOT use potentially single precision cosf or FLUID_COS here! See https://github.com/FluidSynth/fluidsynth/issues/1331
+    mod->a1 = 2 * cos(w);
 
-    a = (2 * FLUID_M_PI / 360) * phase;
+    a = (2.0 * M_PI / 360.0) * phase;
 
-    mod->buffer2 = FLUID_SIN(a - w); /* y(n-1) = sin(-intial angle) */
-    mod->buffer1 = FLUID_SIN(a); /* y(n) = sin(initial phase) */
-    mod->reset_buffer2 = FLUID_SIN(FLUID_M_PI / 2 - w); /* reset value for PI/2 */
+    mod->buffer2 = sin(a - w); /* y(n-1) = sin(-initial angle) */
+    mod->buffer1 = sin(a); /* y(n) = sin(initial phase) */
+    mod->reset_buffer2 = sin((M_PI / 2.0) - w); /* reset value for PI/2 */
 }
 
 /*-----------------------------------------------------------------------------
@@ -264,21 +270,21 @@ static void set_sinus_frequency(sinus_modulator *mod,
  @param mod pointer on modulator structure.
  @return current value of the modulator sine wave.
 -----------------------------------------------------------------------------*/
-static FLUID_INLINE fluid_real_t get_mod_sinus(sinus_modulator *mod)
+static FLUID_INLINE double get_mod_sinus(sinus_modulator *mod)
 {
-    fluid_real_t out;
+    double out;
     out = mod->a1 * mod->buffer1 - mod->buffer2;
     mod->buffer2 = mod->buffer1;
 
-    if(out >= 1.0f) /* reset in case of instability near PI/2 */
+    if(out >= 1.0) /* reset in case of instability near PI/2 */
     {
-        out = 1.0f; /* forces output to the right value */
+        out = 1.0; /* forces output to the right value */
         mod->buffer2 = mod->reset_buffer2;
     }
 
-    if(out <= -1.0f) /* reset in case of instability near -PI/2 */
+    if(out <= -1.0) /* reset in case of instability near -PI/2 */
     {
-        out = -1.0f; /* forces output to the right value */
+        out = -1.0; /* forces output to the right value */
         mod->buffer2 = - mod->reset_buffer2;
     }
 
@@ -560,7 +566,7 @@ static void update_parameters_from_sample_rate(fluid_chorus_t *chorus)
  Modulated delay line initialization.
 
  Sets the length line ( alloc delay samples).
- Remark: the function sets the internal size accordling to the length delay_length.
+ Remark: the function sets the internal size according to the length delay_length.
  The size is augmented by INTERP_SAMPLES_NBR to take account of interpolation.
 
  @param chorus, pointer on chorus unit.
@@ -783,7 +789,7 @@ fluid_chorus_set(fluid_chorus_t *chorus, int set, int nr, fluid_real_t level,
         chorus->level = 0.1;
     }
 
-    /* update parameters dependant of sample rate */
+    /* update parameters dependent of sample rate */
     update_parameters_from_sample_rate(chorus);
 
 #ifdef DEBUG_PRINT
@@ -915,7 +921,7 @@ fluid_chorus_samplerate_change(fluid_chorus_t *chorus, fluid_real_t sample_rate)
 {
     chorus->sample_rate = sample_rate;
 
-    /* update parameters dependant of sample rate */
+    /* update parameters dependent of sample rate */
     update_parameters_from_sample_rate(chorus);
 }
 
@@ -980,7 +986,11 @@ void fluid_chorus_processmix(fluid_chorus_t *chorus, const fluid_real_t *in,
             d_out[1] +=  out ;
         }
 
-        /* Write the current input sample into the circular buffer */
+        /* Write the current input sample into the circular buffer.
+         * Note that 'in' may be aliased with 'left_out'. Hence this must be done
+         * before "processing stereo unit" (below). This ensures input buffer
+         * not being overwritten by stereo unit output.
+         */
         push_in_delay_line(chorus, in[sample_index]);
 
         /* process stereo unit */
@@ -1052,7 +1062,11 @@ void fluid_chorus_processreplace(fluid_chorus_t *chorus, const fluid_real_t *in,
             d_out[1] +=  out ;
         }
 
-        /* Write the current input sample into the circular buffer */
+        /* Write the current input sample into the circular buffer.
+         * Note that 'in' may be aliased with 'left_out'. Hence this must be done
+         * before "processing stereo unit" (below). This ensures input buffer
+         * not being overwritten by stereo unit output.
+         */
         push_in_delay_line(chorus, in[sample_index]);
 
         /* process stereo unit */
